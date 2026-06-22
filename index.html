@@ -656,10 +656,44 @@
     </div>
   </div>
 
+  <!-- Closed Positions -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">Closed Positions</span>
+      <span class="panel-badge" id="closed-badge">—</span>
+    </div>
+    <div class="filters">
+      <button class="filter-btn active" onclick="filterClosed('ALL', this)">ALL</button>
+      <button class="filter-btn" onclick="filterClosed('SWAP', this)">PERPS</button>
+      <button class="filter-btn" onclick="filterClosed('FUTURES', this)">FUTURES</button>
+      <button class="filter-btn" onclick="filterClosed('MARGIN', this)">MARGIN</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Closed</th>
+            <th>Instrument</th>
+            <th>Direction</th>
+            <th>Avg Open</th>
+            <th>Avg Close</th>
+            <th>Size</th>
+            <th>Leverage</th>
+            <th>Realized PnL</th>
+            <th>PnL %</th>
+          </tr>
+        </thead>
+        <tbody id="closed-body">
+          <tr><td colspan="9"><div class="empty-state">Loading closed positions…</div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
   <!-- Trade History -->
   <div class="panel">
     <div class="panel-header">
-      <span class="panel-title">Trade History</span>
+      <span class="panel-title">Fill History</span>
       <span class="panel-badge" id="history-badge">—</span>
     </div>
     <div class="filters">
@@ -678,12 +712,11 @@
             <th>Price</th>
             <th>Size</th>
             <th>Fee</th>
-            <th>PnL</th>
             <th>Order ID</th>
           </tr>
         </thead>
         <tbody id="history-body">
-          <tr><td colspan="8"><div class="empty-state">Loading history…</div></td></tr>
+          <tr><td colspan="7"><div class="empty-state">Loading history…</div></td></tr>
         </tbody>
       </table>
     </div>
@@ -814,9 +847,81 @@
     }).join('');
   }
 
+  // ── Load closed positions ──────────────────────────
+  let allClosed = [];
+
+  async function loadClosedPositions() {
+    const types = ['SWAP', 'FUTURES', 'MARGIN'];
+    const results = await Promise.allSettled(
+      types.map(t => okx('/api/v5/account/positions-history', { instType: t, limit: '100' }))
+    );
+
+    allClosed = results
+      .flatMap(r => r.status === 'fulfilled' ? r.value : [])
+      .sort((a, b) => Number(b.uTime) - Number(a.uTime));
+
+    renderClosed(allClosed);
+    computePerformanceFromClosed(allClosed);
+  }
+
+  function renderClosed(positions) {
+    document.getElementById('closed-badge').textContent = positions.length + ' POSITIONS';
+    const tbody = document.getElementById('closed-body');
+    if (!positions.length) {
+      tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state">No closed positions found</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = positions.slice(0, 200).map(p => {
+      const pnl = parseFloat(p.realizedPnl || 0);
+      const pnlRatio = parseFloat(p.pnlRatio || 0) * 100;
+      const dir = p.direction || (p.posSide === 'long' ? 'long' : 'short');
+      return `<tr>
+        <td>${fmtDate(p.uTime)}</td>
+        <td class="td-pair">${p.instId}</td>
+        <td><span class="td-side ${dir}">${dir.toUpperCase()}</span></td>
+        <td>${p.openAvgPx ? fmtUSD(p.openAvgPx) : '—'}</td>
+        <td>${p.closeAvgPx ? fmtUSD(p.closeAvgPx) : '—'}</td>
+        <td>${fmt(p.closeTotalPos || p.openMaxPos, 4)}</td>
+        <td>${p.lever || '—'}x</td>
+        <td class="td-pnl ${colorClass(pnl)}">${pnl >= 0 ? '+' : ''}${fmtUSD(pnl)}</td>
+        <td class="td-pnl ${colorClass(pnlRatio)}">${pnlRatio !== 0 ? (pnlRatio >= 0 ? '+' : '') + fmt(pnlRatio, 2) + '%' : '—'}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function filterClosed(type, btn) {
+    btn.closest('.panel').querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const filtered = type === 'ALL' ? allClosed : allClosed.filter(p => p.instType === type);
+    renderClosed(filtered);
+  }
+
+  function computePerformanceFromClosed(positions) {
+    if (!positions.length) return;
+    const last100 = positions.slice(0, 100);
+    const pnls = last100.map(p => parseFloat(p.realizedPnl || 0));
+    const total = pnls.reduce((a, b) => a + b, 0);
+    const wins = pnls.filter(p => p > 0).length;
+    const winRate = last100.length > 0 ? (wins / last100.length * 100) : 0;
+    const best = Math.max(...pnls);
+    const worst = Math.min(...pnls);
+    const avg = total / last100.length;
+
+    document.getElementById('p-total-pnl').textContent = (total >= 0 ? '+' : '') + fmtUSD(total);
+    document.getElementById('p-total-pnl').className = 'perf-item-value ' + (total >= 0 ? 'green' : 'red');
+    document.getElementById('p-avg').textContent = (avg >= 0 ? '+' : '') + fmtUSD(avg);
+    document.getElementById('p-avg').className = 'perf-item-value ' + (avg >= 0 ? 'green' : 'red');
+    document.getElementById('p-best').textContent = '+' + fmtUSD(best);
+    document.getElementById('p-worst').textContent = fmtUSD(worst);
+    document.getElementById('p-winrate-label').textContent = fmt(winRate, 1) + '%';
+    document.getElementById('win-bar-fill').style.width = winRate + '%';
+    document.getElementById('stat-winrate').textContent = fmt(winRate, 1) + '%';
+    document.getElementById('stat-winrate').className = 'stat-value ' + (winRate >= 50 ? 'green' : 'red');
+    document.getElementById('stat-winrate-sub').textContent = wins + ' wins / ' + (last100.length - wins) + ' losses';
+  }
+
   // ── Load trade history ─────────────────────────────
   async function loadHistory() {
-    // Fetch fills for all instrument types
     const types = ['SPOT', 'SWAP', 'FUTURES'];
     const results = await Promise.allSettled(
       types.map(t => okx('/api/v5/trade/fills-history', { instType: t, limit: '100' }))
@@ -831,18 +936,16 @@
     }).length;
 
     renderHistory(allHistory);
-    computePerformance(allHistory);
   }
 
   function renderHistory(trades) {
-    document.getElementById('history-badge').textContent = trades.length + ' TRADES';
+    document.getElementById('history-badge').textContent = trades.length + ' FILLS';
     const tbody = document.getElementById('history-body');
     if (!trades.length) {
-      tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No trade history</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state">No fill history</div></td></tr>';
       return;
     }
     tbody.innerHTML = trades.slice(0, 200).map(t => {
-      const pnl = parseFloat(t.pnl || 0);
       return `<tr>
         <td>${fmtDate(t.ts)}</td>
         <td class="td-pair">${t.instId}</td>
@@ -850,14 +953,13 @@
         <td>${fmtUSD(t.fillPx)}</td>
         <td>${fmt(t.fillSz, 4)}</td>
         <td style="color:var(--text2)">${fmtUSD(t.fee)}</td>
-        <td class="td-pnl ${colorClass(pnl)}">${pnl !== 0 ? (pnl > 0 ? '+' : '') + fmtUSD(pnl) : '—'}</td>
         <td style="color:var(--text3);font-size:10px">${t.ordId.slice(-8)}</td>
       </tr>`;
     }).join('');
   }
 
   function filterHistory(type, btn) {
-    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.closest('.panel').querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     const filtered = type === 'ALL' ? allHistory : allHistory.filter(t => t.instType === type);
     renderHistory(filtered);
@@ -900,7 +1002,7 @@
     btn.classList.add('loading');
 
     try {
-      await Promise.all([loadBalance(), loadPositions(), loadHistory()]);
+      await Promise.all([loadBalance(), loadPositions(), loadClosedPositions(), loadHistory()]);
       const now = new Date();
       document.getElementById('last-updated').textContent =
         'UPDATED ' + now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
