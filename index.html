@@ -463,6 +463,55 @@
     letter-spacing: 1px;
   }
 
+  /* Pagination */
+  .pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+  }
+
+  .pagination-info {
+    color: var(--text2);
+    letter-spacing: 0.5px;
+  }
+
+  .pagination-controls {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+
+  .page-btn {
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    color: var(--text2);
+    padding: 4px 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+    letter-spacing: 0.5px;
+  }
+
+  .page-btn:hover:not(:disabled) {
+    border-color: var(--amber);
+    color: var(--amber);
+  }
+
+  .page-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+
+  .page-btn.active {
+    background: rgba(245,166,35,0.1);
+    border-color: var(--amber);
+    color: var(--amber);
+  }
+
   .skeleton {
     background: linear-gradient(90deg, var(--bg3) 25%, var(--border) 50%, var(--bg3) 75%);
     background-size: 200% 100%;
@@ -688,6 +737,14 @@
         </tbody>
       </table>
     </div>
+    <div class="pagination">
+      <span class="pagination-info" id="closed-page-info">—</span>
+      <div class="pagination-controls">
+        <button class="page-btn" id="closed-prev" onclick="closedPage(-1)" disabled>← PREV</button>
+        <span style="color:var(--text3);padding:0 8px;font-size:11px" id="closed-page-num">1</span>
+        <button class="page-btn" id="closed-next" onclick="closedPage(1)" disabled>NEXT →</button>
+      </div>
+    </div>
   </div>
 
   <!-- Trade History -->
@@ -719,6 +776,14 @@
           <tr><td colspan="7"><div class="empty-state">Loading history…</div></td></tr>
         </tbody>
       </table>
+    </div>
+    <div class="pagination">
+      <span class="pagination-info" id="history-page-info">—</span>
+      <div class="pagination-controls">
+        <button class="page-btn" id="history-prev" onclick="historyPage(-1)" disabled>← PREV</button>
+        <span style="color:var(--text3);padding:0 8px;font-size:11px" id="history-page-num">1</span>
+        <button class="page-btn" id="history-next" onclick="historyPage(1)" disabled>NEXT →</button>
+      </div>
     </div>
   </div>
 
@@ -849,6 +914,9 @@
 
   // ── Load closed positions ──────────────────────────
   let allClosed = [];
+  let filteredClosed = [];
+  let closedCurrentPage = 1;
+  const PAGE_SIZE = 20;
 
   async function loadClosedPositions() {
     const types = ['SWAP', 'FUTURES', 'MARGIN'];
@@ -860,18 +928,31 @@
       .flatMap(r => r.status === 'fulfilled' ? r.value : [])
       .sort((a, b) => Number(b.uTime) - Number(a.uTime));
 
-    renderClosed(allClosed);
+    filteredClosed = allClosed;
+    closedCurrentPage = 1;
+    renderClosed();
     computePerformanceFromClosed(allClosed);
   }
 
-  function renderClosed(positions) {
+  function renderClosed() {
+    const positions = filteredClosed;
     document.getElementById('closed-badge').textContent = positions.length + ' POSITIONS';
     const tbody = document.getElementById('closed-body');
+
     if (!positions.length) {
       tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state">No closed positions found</div></td></tr>';
+      document.getElementById('closed-page-info').textContent = '0 results';
+      document.getElementById('closed-prev').disabled = true;
+      document.getElementById('closed-next').disabled = true;
       return;
     }
-    tbody.innerHTML = positions.slice(0, 200).map(p => {
+
+    const totalPages = Math.ceil(positions.length / PAGE_SIZE);
+    closedCurrentPage = Math.min(closedCurrentPage, totalPages);
+    const start = (closedCurrentPage - 1) * PAGE_SIZE;
+    const page = positions.slice(start, start + PAGE_SIZE);
+
+    tbody.innerHTML = page.map(p => {
       const pnl = parseFloat(p.realizedPnl || 0);
       const pnlRatio = parseFloat(p.pnlRatio || 0) * 100;
       const dir = p.direction || (p.posSide === 'long' ? 'long' : 'short');
@@ -887,13 +968,25 @@
         <td class="td-pnl ${colorClass(pnlRatio)}">${pnlRatio !== 0 ? (pnlRatio >= 0 ? '+' : '') + fmt(pnlRatio, 2) + '%' : '—'}</td>
       </tr>`;
     }).join('');
+
+    document.getElementById('closed-page-info').textContent =
+      `${start + 1}–${Math.min(start + PAGE_SIZE, positions.length)} of ${positions.length}`;
+    document.getElementById('closed-page-num').textContent = closedCurrentPage + ' / ' + totalPages;
+    document.getElementById('closed-prev').disabled = closedCurrentPage <= 1;
+    document.getElementById('closed-next').disabled = closedCurrentPage >= totalPages;
+  }
+
+  function closedPage(dir) {
+    closedCurrentPage += dir;
+    renderClosed();
   }
 
   function filterClosed(type, btn) {
     btn.closest('.panel').querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    const filtered = type === 'ALL' ? allClosed : allClosed.filter(p => p.instType === type);
-    renderClosed(filtered);
+    filteredClosed = type === 'ALL' ? allClosed : allClosed.filter(p => p.instType === type);
+    closedCurrentPage = 1;
+    renderClosed();
   }
 
   function computePerformanceFromClosed(positions) {
@@ -921,6 +1014,9 @@
   }
 
   // ── Load trade history ─────────────────────────────
+  let filteredHistory = [];
+  let historyCurrentPage = 1;
+
   async function loadHistory() {
     const types = ['SPOT', 'SWAP', 'FUTURES'];
     const results = await Promise.allSettled(
@@ -935,17 +1031,30 @@
       return Date.now() - Number(t.ts) < 86400000;
     }).length;
 
-    renderHistory(allHistory);
+    filteredHistory = allHistory;
+    historyCurrentPage = 1;
+    renderHistory();
   }
 
-  function renderHistory(trades) {
+  function renderHistory() {
+    const trades = filteredHistory;
     document.getElementById('history-badge').textContent = trades.length + ' FILLS';
     const tbody = document.getElementById('history-body');
+
     if (!trades.length) {
       tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state">No fill history</div></td></tr>';
+      document.getElementById('history-page-info').textContent = '0 results';
+      document.getElementById('history-prev').disabled = true;
+      document.getElementById('history-next').disabled = true;
       return;
     }
-    tbody.innerHTML = trades.slice(0, 200).map(t => {
+
+    const totalPages = Math.ceil(trades.length / PAGE_SIZE);
+    historyCurrentPage = Math.min(historyCurrentPage, totalPages);
+    const start = (historyCurrentPage - 1) * PAGE_SIZE;
+    const page = trades.slice(start, start + PAGE_SIZE);
+
+    tbody.innerHTML = page.map(t => {
       return `<tr>
         <td>${fmtDate(t.ts)}</td>
         <td class="td-pair">${t.instId}</td>
@@ -956,13 +1065,25 @@
         <td style="color:var(--text3);font-size:10px">${t.ordId.slice(-8)}</td>
       </tr>`;
     }).join('');
+
+    document.getElementById('history-page-info').textContent =
+      `${start + 1}–${Math.min(start + PAGE_SIZE, trades.length)} of ${trades.length}`;
+    document.getElementById('history-page-num').textContent = historyCurrentPage + ' / ' + totalPages;
+    document.getElementById('history-prev').disabled = historyCurrentPage <= 1;
+    document.getElementById('history-next').disabled = historyCurrentPage >= totalPages;
+  }
+
+  function historyPage(dir) {
+    historyCurrentPage += dir;
+    renderHistory();
   }
 
   function filterHistory(type, btn) {
     btn.closest('.panel').querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    const filtered = type === 'ALL' ? allHistory : allHistory.filter(t => t.instType === type);
-    renderHistory(filtered);
+    filteredHistory = type === 'ALL' ? allHistory : allHistory.filter(t => t.instType === type);
+    historyCurrentPage = 1;
+    renderHistory();
   }
 
   // ── Compute performance from history ──────────────
