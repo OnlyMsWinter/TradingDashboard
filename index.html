@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OKX Trading Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0b0d;
+    --bg2: #0f1114;
+    --bg3: #13161a;
+    --border: #1e2228;
+    --border2: #252b33;
+    --text: #c8cdd6;
+    --text2: #6b7585;
+    --text3: #3d4452;
+    --amber: #f5a623;
+    --amber2: #d4861a;
+    --green: #00c896;
+    --red: #ff4757;
+    --blue: #4a9eff;
+    --purple: #9b6dff;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'Syne', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.5;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.03) 2px,
+      rgba(0,0,0,0.03) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* Header */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    font-family: var(--sans);
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .logo span {
+    color: var(--amber);
+  }
+
+  .logo-dot {
+    width: 8px; height: 8px;
+    background: var(--green);
+    border-radius: 50%;
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.8); }
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+
+  .clock {
+    color: var(--text2);
+    font-size: 12px;
+    letter-spacing: 1px;
+  }
+
+  .refresh-btn {
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    color: var(--text);
+    padding: 6px 14px;
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .refresh-btn:hover {
+    border-color: var(--amber);
+    color: var(--amber);
+  }
+
+  .refresh-btn.loading {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+
+  .refresh-btn svg {
+    transition: transform 0.3s;
+  }
+
+  .refresh-btn.loading svg {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Error banner */
+  #error-banner {
+    display: none;
+    background: rgba(255,71,87,0.1);
+    border-bottom: 1px solid rgba(255,71,87,0.3);
+    color: var(--red);
+    padding: 10px 24px;
+    font-size: 12px;
+  }
+
+  /* Main grid */
+  .dashboard {
+    padding: 20px 24px;
+    display: grid;
+    gap: 16px;
+  }
+
+  /* Top stats row */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+  }
+
+  .stat-card {
+    background: var(--bg2);
+    padding: 18px 20px;
+    position: relative;
+    overflow: hidden;
+    animation: fadeIn 0.4s ease both;
+  }
+
+  .stat-card::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--amber);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.3s ease;
+  }
+
+  .stat-card:hover::after { transform: scaleX(1); }
+
+  .stat-label {
+    color: var(--text2);
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .stat-value {
+    font-size: 22px;
+    font-weight: 600;
+    color: #fff;
+    letter-spacing: -1px;
+    line-height: 1;
+  }
+
+  .stat-value.amber { color: var(--amber); }
+  .stat-value.green { color: var(--green); }
+  .stat-value.red { color: var(--red); }
+
+  .stat-sub {
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--text3);
+  }
+
+  /* Middle row: portfolio + performance */
+  .mid-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  /* Panels */
+  .panel {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    animation: fadeIn 0.5s ease both;
+  }
+
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .panel-title {
+    font-family: var(--sans);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text2);
+  }
+
+  .panel-badge {
+    font-size: 10px;
+    padding: 2px 8px;
+    background: rgba(245,166,35,0.1);
+    color: var(--amber);
+    border: 1px solid rgba(245,166,35,0.2);
+    letter-spacing: 0.5px;
+  }
+
+  .panel-body { padding: 16px; }
+
+  /* Portfolio assets */
+  .asset-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    animation: slideIn 0.3s ease both;
+  }
+
+  .asset-row:last-child { border-bottom: none; }
+
+  .asset-name {
+    color: #fff;
+    font-weight: 500;
+    font-size: 13px;
+  }
+
+  .asset-amount {
+    color: var(--text2);
+    font-size: 11px;
+    margin-top: 2px;
+  }
+
+  .asset-usd {
+    text-align: right;
+    font-weight: 500;
+    color: var(--text);
+    font-size: 13px;
+  }
+
+  .asset-pct {
+    font-size: 11px;
+    padding: 2px 6px;
+    text-align: right;
+  }
+
+  .asset-pct.up { color: var(--green); }
+  .asset-pct.down { color: var(--red); }
+
+  /* Performance chart area */
+  .perf-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .perf-item {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    padding: 14px;
+  }
+
+  .perf-item-label {
+    font-size: 10px;
+    color: var(--text2);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .perf-item-value {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.5px;
+  }
+
+  .perf-item-value.green { color: var(--green); }
+  .perf-item-value.red { color: var(--red); }
+  .perf-item-value.amber { color: var(--amber); }
+  .perf-item-value.white { color: #fff; }
+
+  /* Win rate bar */
+  .win-bar-wrap {
+    margin-top: 16px;
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+  }
+
+  .win-bar-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--text2);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+  }
+
+  .win-bar {
+    height: 6px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .win-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--green), #00a878);
+    transition: width 0.8s ease;
+  }
+
+  /* Positions table */
+  .table-wrap { overflow-x: auto; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+
+  thead th {
+    padding: 8px 12px;
+    text-align: left;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text3);
+    border-bottom: 1px solid var(--border);
+    font-weight: 400;
+    white-space: nowrap;
+  }
+
+  thead th:not(:first-child) { text-align: right; }
+
+  tbody tr {
+    border-bottom: 1px solid var(--border);
+    transition: background 0.1s;
+    animation: slideIn 0.3s ease both;
+  }
+
+  tbody tr:hover { background: var(--bg3); }
+  tbody tr:last-child { border-bottom: none; }
+
+  tbody td {
+    padding: 10px 12px;
+    color: var(--text);
+    white-space: nowrap;
+  }
+
+  tbody td:not(:first-child) { text-align: right; }
+
+  .td-pair {
+    color: #fff;
+    font-weight: 500;
+  }
+
+  .td-side {
+    font-size: 10px;
+    padding: 2px 6px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+
+  .td-side.long {
+    color: var(--green);
+    background: rgba(0,200,150,0.1);
+    border: 1px solid rgba(0,200,150,0.2);
+  }
+
+  .td-side.short {
+    color: var(--red);
+    background: rgba(255,71,87,0.1);
+    border: 1px solid rgba(255,71,87,0.2);
+  }
+
+  .td-pnl.pos { color: var(--green); }
+  .td-pnl.neg { color: var(--red); }
+
+  /* History filters */
+  .filters {
+    display: flex;
+    gap: 8px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .filter-btn {
+    background: transparent;
+    border: 1px solid var(--border2);
+    color: var(--text2);
+    padding: 4px 12px;
+    font-family: var(--mono);
+    font-size: 11px;
+    cursor: pointer;
+    letter-spacing: 0.5px;
+    transition: all 0.15s;
+  }
+
+  .filter-btn:hover, .filter-btn.active {
+    background: rgba(245,166,35,0.1);
+    border-color: var(--amber);
+    color: var(--amber);
+  }
+
+  /* Empty / loading states */
+  .empty-state {
+    padding: 40px;
+    text-align: center;
+    color: var(--text3);
+    font-size: 12px;
+    letter-spacing: 1px;
+  }
+
+  .skeleton {
+    background: linear-gradient(90deg, var(--bg3) 25%, var(--border) 50%, var(--bg3) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 2px;
+    height: 14px;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(-6px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  /* Responsive */
+  @media (max-width: 1100px) {
+    .stats-row { grid-template-columns: repeat(3, 1fr); }
+    .mid-row { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 700px) {
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+    header { padding: 12px 16px; }
+    .dashboard { padding: 14px 16px; }
+  }
+
+  /* Tooltip */
+  .tooltip-wrap { position: relative; display: inline-block; }
+  .tooltip {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    padding: 6px 10px;
+    font-size: 11px;
+    white-space: nowrap;
+    color: var(--text);
+    z-index: 10;
+  }
+  .tooltip-wrap:hover .tooltip { display: block; }
+
+  /* Last updated */
+  .last-updated {
+    font-size: 10px;
+    color: var(--text3);
+    letter-spacing: 1px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-dot"></div>
+    OKX <span>TERMINAL</span>
+  </div>
+  <div class="header-right">
+    <span class="clock" id="clock">--:--:--</span>
+    <span class="last-updated" id="last-updated">NOT LOADED</span>
+    <button class="refresh-btn" id="refresh-btn" onclick="loadAll()">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M10.5 6A4.5 4.5 0 1 1 6 1.5M10.5 1.5v3h-3"/>
+      </svg>
+      REFRESH
+    </button>
+  </div>
+</header>
+
+<div id="error-banner"></div>
+
+<div class="dashboard">
+
+  <!-- Stats row -->
+  <div class="stats-row" id="stats-row">
+    <div class="stat-card">
+      <div class="stat-label">Total Balance</div>
+      <div class="stat-value amber" id="stat-balance">—</div>
+      <div class="stat-sub" id="stat-balance-sub">USD equivalent</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Unrealised PnL</div>
+      <div class="stat-value" id="stat-upnl">—</div>
+      <div class="stat-sub" id="stat-upnl-sub">across all positions</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Today's Trades</div>
+      <div class="stat-value white" id="stat-today">—</div>
+      <div class="stat-sub">filled orders</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Win Rate</div>
+      <div class="stat-value" id="stat-winrate">—</div>
+      <div class="stat-sub" id="stat-winrate-sub">last 100 trades</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Open Positions</div>
+      <div class="stat-value white" id="stat-positions">—</div>
+      <div class="stat-sub">active</div>
+    </div>
+  </div>
+
+  <!-- Mid row -->
+  <div class="mid-row">
+
+    <!-- Portfolio -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Portfolio</span>
+        <span class="panel-badge" id="portfolio-badge">LOADING</span>
+      </div>
+      <div class="panel-body">
+        <div id="portfolio-list"><div class="empty-state">Loading assets…</div></div>
+      </div>
+    </div>
+
+    <!-- Performance -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Performance</span>
+        <span class="panel-badge">LAST 100</span>
+      </div>
+      <div class="panel-body">
+        <div class="perf-grid" id="perf-grid">
+          <div class="perf-item">
+            <div class="perf-item-label">Total PnL</div>
+            <div class="perf-item-value white" id="p-total-pnl">—</div>
+          </div>
+          <div class="perf-item">
+            <div class="perf-item-label">Avg Trade</div>
+            <div class="perf-item-value white" id="p-avg">—</div>
+          </div>
+          <div class="perf-item">
+            <div class="perf-item-label">Best Trade</div>
+            <div class="perf-item-value green" id="p-best">—</div>
+          </div>
+          <div class="perf-item">
+            <div class="perf-item-label">Worst Trade</div>
+            <div class="perf-item-value red" id="p-worst">—</div>
+          </div>
+        </div>
+        <div class="win-bar-wrap">
+          <div class="win-bar-label">
+            <span>Win Rate</span>
+            <span id="p-winrate-label">—</span>
+          </div>
+          <div class="win-bar">
+            <div class="win-bar-fill" id="win-bar-fill" style="width:0%"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Open Positions -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">Open Positions</span>
+      <span class="panel-badge" id="positions-badge">—</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Instrument</th>
+            <th>Side</th>
+            <th>Size</th>
+            <th>Avg Entry</th>
+            <th>Mark Price</th>
+            <th>Liq. Price</th>
+            <th>Unrealised PnL</th>
+            <th>Leverage</th>
+          </tr>
+        </thead>
+        <tbody id="positions-body">
+          <tr><td colspan="8"><div class="empty-state">Loading positions…</div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Trade History -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">Trade History</span>
+      <span class="panel-badge" id="history-badge">—</span>
+    </div>
+    <div class="filters">
+      <button class="filter-btn active" onclick="filterHistory('ALL', this)">ALL</button>
+      <button class="filter-btn" onclick="filterHistory('SPOT', this)">SPOT</button>
+      <button class="filter-btn" onclick="filterHistory('SWAP', this)">PERPS</button>
+      <button class="filter-btn" onclick="filterHistory('FUTURES', this)">FUTURES</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Instrument</th>
+            <th>Side</th>
+            <th>Price</th>
+            <th>Size</th>
+            <th>Fee</th>
+            <th>PnL</th>
+            <th>Order ID</th>
+          </tr>
+        </thead>
+        <tbody id="history-body">
+          <tr><td colspan="8"><div class="empty-state">Loading history…</div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // ── Clock ──────────────────────────────────────────
+  function tickClock() {
+    const now = new Date();
+    document.getElementById('clock').textContent =
+      now.toUTCString().slice(17, 25) + ' UTC';
+  }
+  tickClock();
+  setInterval(tickClock, 1000);
+
+  // ── API proxy ──────────────────────────────────────
+  const PROXY = '/.netlify/functions/okx-proxy';
+  let allHistory = [];
+
+  async function okx(endpoint, params = {}, method = 'GET') {
+    const res = await fetch(PROXY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint, params, method }),
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    if (data.code && data.code !== '0') throw new Error(`OKX ${data.code}: ${data.msg}`);
+    return data.data || [];
+  }
+
+  // ── Format helpers ─────────────────────────────────
+  const fmt = (n, d = 2) => n == null ? '—' : Number(n).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+  const fmtUSD = (n) => '$' + fmt(n, 2);
+  const fmtPct = (n) => (n >= 0 ? '+' : '') + fmt(n, 2) + '%';
+  const fmtDate = (ts) => {
+    const d = new Date(Number(ts));
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+      ' ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  };
+
+  function colorClass(n) {
+    const v = Number(n);
+    if (v > 0) return 'pos';
+    if (v < 0) return 'neg';
+    return '';
+  }
+
+  // ── Show error ─────────────────────────────────────
+  function showError(msg) {
+    const el = document.getElementById('error-banner');
+    el.style.display = 'block';
+    el.textContent = '⚠ ' + msg;
+  }
+
+  function clearError() {
+    document.getElementById('error-banner').style.display = 'none';
+  }
+
+  // ── Load balance / portfolio ───────────────────────
+  async function loadBalance() {
+    const data = await okx('/api/v5/account/balance');
+    if (!data[0]) return;
+    const details = data[0].details || [];
+    const totalUSD = parseFloat(data[0].totalEq || 0);
+    const upnl = parseFloat(data[0].upl || 0);
+
+    document.getElementById('stat-balance').textContent = fmtUSD(totalUSD);
+    const upnlEl = document.getElementById('stat-upnl');
+    upnlEl.textContent = (upnl >= 0 ? '+' : '') + fmtUSD(upnl);
+    upnlEl.className = 'stat-value ' + (upnl >= 0 ? 'green' : 'red');
+
+    // Portfolio list
+    const assets = details
+      .filter(a => parseFloat(a.eqUsd) > 0.01)
+      .sort((a, b) => parseFloat(b.eqUsd) - parseFloat(a.eqUsd))
+      .slice(0, 10);
+
+    document.getElementById('portfolio-badge').textContent = assets.length + ' ASSETS';
+
+    const list = document.getElementById('portfolio-list');
+    if (!assets.length) {
+      list.innerHTML = '<div class="empty-state">No assets found</div>';
+      return;
+    }
+
+    list.innerHTML = assets.map(a => {
+      const usd = parseFloat(a.eqUsd);
+      const pct = totalUSD > 0 ? (usd / totalUSD * 100) : 0;
+      return `<div class="asset-row">
+        <div>
+          <div class="asset-name">${a.ccy}</div>
+          <div class="asset-amount">${fmt(a.eq, 4)} ${a.ccy}</div>
+        </div>
+        <div class="asset-usd">${fmtUSD(usd)}</div>
+        <div class="asset-pct up">${fmt(pct, 1)}%</div>
+      </div>`;
+    }).join('');
+  }
+
+  // ── Load positions ─────────────────────────────────
+  async function loadPositions() {
+    const data = await okx('/api/v5/account/positions');
+    document.getElementById('stat-positions').textContent = data.length;
+    document.getElementById('positions-badge').textContent = data.length + ' OPEN';
+
+    const tbody = document.getElementById('positions-body');
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No open positions</div></td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = data.map(p => {
+      const upnl = parseFloat(p.upl || 0);
+      const side = p.posSide === 'net' ? (parseFloat(p.pos) >= 0 ? 'long' : 'short') : p.posSide;
+      return `<tr>
+        <td class="td-pair">${p.instId}</td>
+        <td><span class="td-side ${side}">${side.toUpperCase()}</span></td>
+        <td>${fmt(p.pos, 4)}</td>
+        <td>${fmtUSD(p.avgPx)}</td>
+        <td>${fmtUSD(p.markPx)}</td>
+        <td>${p.liqPx ? fmtUSD(p.liqPx) : '—'}</td>
+        <td class="td-pnl ${colorClass(upnl)}">${upnl >= 0 ? '+' : ''}${fmtUSD(upnl)}</td>
+        <td>${p.lever || '—'}x</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ── Load trade history ─────────────────────────────
+  async function loadHistory() {
+    // Fetch fills for all instrument types
+    const types = ['SPOT', 'SWAP', 'FUTURES'];
+    const results = await Promise.allSettled(
+      types.map(t => okx('/api/v5/trade/fills-history', { instType: t, limit: '100' }))
+    );
+
+    allHistory = results
+      .flatMap(r => r.status === 'fulfilled' ? r.value : [])
+      .sort((a, b) => Number(b.ts) - Number(a.ts));
+
+    document.getElementById('stat-today').textContent = allHistory.filter(t => {
+      return Date.now() - Number(t.ts) < 86400000;
+    }).length;
+
+    renderHistory(allHistory);
+    computePerformance(allHistory);
+  }
+
+  function renderHistory(trades) {
+    document.getElementById('history-badge').textContent = trades.length + ' TRADES';
+    const tbody = document.getElementById('history-body');
+    if (!trades.length) {
+      tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No trade history</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = trades.slice(0, 200).map(t => {
+      const pnl = parseFloat(t.pnl || 0);
+      return `<tr>
+        <td>${fmtDate(t.ts)}</td>
+        <td class="td-pair">${t.instId}</td>
+        <td><span class="td-side ${t.side}">${t.side.toUpperCase()}</span></td>
+        <td>${fmtUSD(t.fillPx)}</td>
+        <td>${fmt(t.fillSz, 4)}</td>
+        <td style="color:var(--text2)">${fmtUSD(t.fee)}</td>
+        <td class="td-pnl ${colorClass(pnl)}">${pnl !== 0 ? (pnl > 0 ? '+' : '') + fmtUSD(pnl) : '—'}</td>
+        <td style="color:var(--text3);font-size:10px">${t.ordId.slice(-8)}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function filterHistory(type, btn) {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const filtered = type === 'ALL' ? allHistory : allHistory.filter(t => t.instType === type);
+    renderHistory(filtered);
+  }
+
+  // ── Compute performance from history ──────────────
+  function computePerformance(trades) {
+    const withPnl = trades.filter(t => t.pnl && parseFloat(t.pnl) !== 0);
+    const last100 = withPnl.slice(0, 100);
+
+    if (!last100.length) return;
+
+    const pnls = last100.map(t => parseFloat(t.pnl));
+    const total = pnls.reduce((a, b) => a + b, 0);
+    const wins = pnls.filter(p => p > 0).length;
+    const winRate = last100.length > 0 ? (wins / last100.length * 100) : 0;
+    const best = Math.max(...pnls);
+    const worst = Math.min(...pnls);
+    const avg = total / last100.length;
+
+    document.getElementById('p-total-pnl').textContent = (total >= 0 ? '+' : '') + fmtUSD(total);
+    document.getElementById('p-total-pnl').className = 'perf-item-value ' + (total >= 0 ? 'green' : 'red');
+    document.getElementById('p-avg').textContent = (avg >= 0 ? '+' : '') + fmtUSD(avg);
+    document.getElementById('p-avg').className = 'perf-item-value ' + (avg >= 0 ? 'green' : 'red');
+    document.getElementById('p-best').textContent = '+' + fmtUSD(best);
+    document.getElementById('p-worst').textContent = fmtUSD(worst);
+
+    document.getElementById('p-winrate-label').textContent = fmt(winRate, 1) + '%';
+    document.getElementById('win-bar-fill').style.width = winRate + '%';
+
+    document.getElementById('stat-winrate').textContent = fmt(winRate, 1) + '%';
+    document.getElementById('stat-winrate').className = 'stat-value ' + (winRate >= 50 ? 'green' : 'red');
+    document.getElementById('stat-winrate-sub').textContent = wins + ' wins / ' + (last100.length - wins) + ' losses';
+  }
+
+  // ── Load all ───────────────────────────────────────
+  async function loadAll() {
+    clearError();
+    const btn = document.getElementById('refresh-btn');
+    btn.classList.add('loading');
+
+    try {
+      await Promise.all([loadBalance(), loadPositions(), loadHistory()]);
+      const now = new Date();
+      document.getElementById('last-updated').textContent =
+        'UPDATED ' + now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+    } catch (e) {
+      showError(e.message || 'Failed to load data. Check OKX credentials in Netlify env vars.');
+    } finally {
+      btn.classList.remove('loading');
+    }
+  }
+
+  // Auto-load on start, auto-refresh every 30s
+  loadAll();
+  setInterval(loadAll, 30000);
+</script>
+</body>
+</html>
